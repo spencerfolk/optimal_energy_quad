@@ -1,0 +1,1 @@
+# optimal_energy_quad
