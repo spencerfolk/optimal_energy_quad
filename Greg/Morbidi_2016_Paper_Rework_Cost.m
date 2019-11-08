@@ -39,8 +39,6 @@ k_b = C_T*rho*A*r^2;
 k_tao = C_Q*rho*A*r^3;
 J = J_m+J_L;
 
-%% Simplified Energy Model
-
 %Constants
 constants.c1 = R*T_f^2/K_T^2;
 constants.c2 = T_f/K_T*(2*R*D_f/K_T+K_E);
@@ -52,15 +50,10 @@ constants.c7 = R*J^2/K_T^2;
 constants.c8 = J/K_T*(2*R*D_f/K_T+K_E);
 constants.c9 = 2*R*J*k_tao/K_T^2;
 
-%     for k = 13:16
-%         Er = Er + (c1+c2*x(k,t)+c3*x(k,t)^2+c4*x(k,t)^3+c5*x(k,t)^4)*dt;
-%     end
-%     for j = 1:4
-%         Er = Er + c7*alpha(j,t)^2*dt;
+%% Simplified Energy Model
 
+%NOTE - 11/8 - g and dG should now be correct.
 
-%NOTE - 11/7 - updated g to represent Morbini's cost function. Still need
-%to update dG (maybe)
 function [g,dG] = cost(z, N, nx, nu, dt)
 %Cost(z) computes the cost and cost jacobian - Matt Halm's base code.
 %   @param z: decision variable (column) vector containing the x_i and u_i
@@ -78,20 +71,18 @@ function [g,dG] = cost(z, N, nx, nu, dt)
     dG = zeros(N*(nx + nu),1);
 
     for i=1:(N-1)
-        
-        % TODO: add cost and cost gradient for interval between u_i and
-        % u_{i+1}
+       
         [x_i_inds, u_i_inds] = sample_indices(i, nx, nu);
         [x_ip1_inds, u_ip1_inds] = sample_indices(i+1, nx, nu);
-        
-        %Input equation       
-        g_i = 0;
         
         xi = z(x_i_inds);
         xip1 = z(x_ip1_inds);
         ui = z(u_i_inds);
         uip1 = z(u_ip1_inds);
         
+        %Input equation       
+        g_i = 0;
+                
     for k = 13:16
         g_i = g_i + (Energy1(xi(k),constants)+Energy1(xip1(k),constants))*dt/2;
     end
@@ -100,13 +91,27 @@ function [g,dG] = cost(z, N, nx, nu, dt)
     end    
         
         %Indiviual dG components based on partial derivatives
-        dG_ui = dt*ui;
-        dG_uip1 = dt*uip1;
+        %Note - x1-12 are not included in g and dG w.r.t. each of them is 0
+        
+        dG_xi = zeros(nx,1);
+        dG_xip1 = zeros(nx,1);
+        
+        %Partial with respect to each state is identical x13-16
+        for k = 13:16    
+            dG_xi(k) = dt/2*(dEnergy1(xi(k)));
+            dG_xip1(k) = dt/2*(dEnergy1(xip1(k)));
+        end
+        
+        %Partial with respect to each input is identical
+        dG_ui = dt*constants.c7*ui;
+        dG_uip1 = dt*constants.c7*uip1;
         
         %Update g and dG with added pieces from g_i and dG_i
         g = g+g_i;
         dG(u_i_inds) = dG(u_i_inds) + dG_ui;
         dG(u_ip1_inds) = dG_uip1;
+        dG(x_i_inds) = dG(x_i_inds) + dG_xi;
+        dG(x_ip1_inds) = dG_xip1;
 
     end
 
@@ -120,6 +125,14 @@ function [Er1] = Energy1(xki,constants)
     Er1 = (constants.c1+constants.c2*xki+constants.c3*xki^2+constants.c4*xki^3+constants.c5*xki^4);
 end
 
+function [dEr1_dxk] = dEnergy1 (xki,constants)
+    %Takes in [1,1] xki (all state values in relevant state
+    %Takes in structure constants containing c1-c9
+    %Gives back scalar dEr1_dxk, corresponding to the gradient w.r.t. xk.
+    %Note that this is the partial derivative of the above "Energy1"
+    dEr1_dxk = constants.c2*2*constants.c3*xki+3*constants.c4*xki^2+4*constants.c5*xki^3;
+end
+
 function [Er2] = Energy2(uji,constants)
     %Takes in [1,1] uji (all state values in relevant state
     %Takes in structure constants containing c1-c9
@@ -128,9 +141,10 @@ function [Er2] = Energy2(uji,constants)
     Er2 = constants.c7*uji^2;
 end
 
-%NOTE - following is unupdated code from HW5, to be used as base code. 11/7
+%NOTE - 11/8: the following is updated with the EXCEPTION of constraints in
+%'all_contraints'
 
-function [z, Aeq, beq, lb, ub, z0] = find_swingup_trajectory(x_0, x_f, N, dt)
+function [z, Aeq, beq, lb, ub, z0] = find_flight_trajectory(x_0, x_f, N, dt)
 %FIND_SWINGUP_TRAJECTORY(x_0, x_f, N, dt) executes a direct collocation
 %optimization program to find an input sequence to drive the cartpole
 %system from x_0 to x_f.
@@ -144,8 +158,8 @@ function [z, Aeq, beq, lb, ub, z0] = find_swingup_trajectory(x_0, x_f, N, dt)
 %   @output lb: lower bound of constraint lb <= z <= ub; n_z by 1 vector
 %   @output ub: upper bound of constraint lb <= z <= ub; n_z by 1 vector
 %   @output z0: initial guess for z; n_z by 1 vector
-    nx = 4;
-    nu = 1;
+    nx = 16;
+    nu = 4;
 
     % TODO: Add constraints to Aeq, beq to enforce starting at x_0 and
     % ending at x_f
@@ -161,7 +175,7 @@ function [z, Aeq, beq, lb, ub, z0] = find_swingup_trajectory(x_0, x_f, N, dt)
     %Fill in beq with given inital and final conditions
     beq = [x_0;x_f];
     
-    M = 50;
+    w_max = 1047.197; %rad/s
 
     % TODO: Add bounding box constraints u \in [-M,M]^nu
     lb = -inf(N * (nx + nu),1);
@@ -170,9 +184,9 @@ function [z, Aeq, beq, lb, ub, z0] = find_swingup_trajectory(x_0, x_f, N, dt)
     for i=1:N
         
         % Add bounding box constraints for u_i
-        [~,u_i_inds] = sample_indices(i, nx, nu);
-        lb(u_i_inds) = -M;
-        ub(u_i_inds) = M;
+        [x_i_inds,~] = sample_indices(i, nx, nu);      
+        lb(x_i_inds(13:16)) = 0;
+        ub(u_i_inds(13:16)) = w_max;
     end
 
     % TODO: make initial guess for z
@@ -219,6 +233,117 @@ function [c, ceq, dC, dCeq] = all_constraints(z, N, nx, nu, dt)
 
     dC = sparse(dC)';
     dCeq = sparse(dCeq)';
+end
+
+%Note - 11/8: the following two functions have been unupdated from
+%Homework 5. They must be updated to include the dynamics of our system.
+
+function [h,dH] = dynamics_constraints(z, N, nx, nu, dt)
+%DYNAMICS_CONSTRAINTS(z) compiles the dynamics constraints generated by
+%dynamics_constraint_with_derivative.
+%   @param z: decision variable (column) vector containing the x_i and u_i
+%   @param N: number of sample points; scalar
+%   @param nx: dimension of state vector, x; scalar
+%   @param nu: dimension of input vector, u; scalar
+%   @param dt: \Delta t, the inter-sample interval duration; scalar
+
+%   @output h: compiled h_i from dynamics_constraint_with_derivative;
+%   (N-1)*nx by 1 vector
+%   @output dH_i: compiled dH_i from dynamics_constraint_with_derivative;
+%   (N-1)*nx by nz matrix
+
+    h = zeros((N-1)*nx, 1);
+    dH = zeros((N-1)*nx, N*(nx + nu));
+
+    for i=1:(N-1)
+
+        % TODO: call dynamics_constraint_with_derivative ith sample
+        %Manage indices and solve for x/u i and ip1
+        [x_i_inds, u_i_inds] = sample_indices(i, nx, nu);
+        [x_ip1_inds, u_ip1_inds] = sample_indices(i+1, nx, nu);
+        x_i = z(x_i_inds);
+        u_i = z(u_i_inds);
+        x_ip1 = z(x_ip1_inds);
+        u_ip1 = z(u_ip1_inds);
+        %Call dynamics_constraint_with_derivative
+        [h_i,dH_i] = dynamics_constraint_with_derivative(x_i, u_i, x_ip1, u_ip1, dt);
+
+        % TODO fit h_i and dH_i into h and dH, respectively.
+        h(x_i_inds) = h_i;
+        dH(x_i_inds,[x_i_inds,u_i_inds,x_ip1_inds,u_ip1_inds]) = dH_i;
+
+    end
+
+end
+
+function [h_i,dH_i] = dynamics_constraint_with_derivative(x_i, u_i, x_ip1, u_ip1, dt)
+%DYNAMICS_CONSTRAINT_WITH_DERIVATIVE(x_i, u_i, x_ip1, u_ip1, dt) returns
+%and computes the gradient of the vector constraint asssociated with
+%dynamics_constraint(x_i, u_i, x_ip1, u_ip1, dt).
+%Originally created by Matt Halm for MEAM517.
+%
+%   @param x_i: the state at the start of the interval; nx by 1 vector
+%   @param u_i: the input at the start of the interval; nu by 1 vector
+%   @param x_ip1: the state at the end of the interval; nx by 1 vector
+%   @param u_ip1: the input at the end of the interval; nu by 1 vector
+%   @param dt: \Delta t, the duration of the interval; scalar
+%
+%   @output h_i: constraint value from dynamics_constraint; nx by 1 vector
+%   @output dH_i: jacobian of h_i w.r.t. [x_i; u_i; x_ip1; u_ip1]; nx by
+%   (2nx + 2nu) matrix
+
+    h_i = evaluate_dynamics_constraint(x_i, u_i, x_ip1, u_ip1, dt);
+    if nargout > 1
+      % use numerical derivatives to compute dH
+      % dH = [dh/dx0 dh/du0 dh/dx1 dh/du1]
+      % where the partial derivatives are written (dh/dx0)_ij = dh_i/dx0_j
+      delta = 1e-8;
+      dH_i = zeros(numel(x_i), 2*(numel(x_i)+numel(u_i)));
+      for j=1:numel(x_i)
+          dx = zeros(numel(x_i),1);
+          dx(j) = delta;
+          dHx_i_j = evaluate_dynamics_constraint(x_i + dx, u_i, x_ip1, u_ip1, dt) - h_i;
+          dHx_ip1_j = evaluate_dynamics_constraint(x_i, u_i, x_ip1 + dx, u_ip1, dt) - h_i;
+          dH_i(:,j) = dHx_i_j/delta;
+          dH_i(:,j + numel(x_i) + numel(u_i)) = dHx_ip1_j/delta;
+      end
+
+      for j=1:numel(u_i)
+          du = zeros(numel(u_i),1);
+          du(j) = delta;
+          dHu_i_j = evaluate_dynamics_constraint(x_i, u_i + du, x_ip1, u_ip1, dt) - h_i;
+          dHu_ip1_j = evaluate_dynamics_constraint(x_i, u_i, x_ip1, u_ip1 + du, dt) - h_i;
+          dH_i(:,j + numel(x_i)) = dHu_i_j/delta;
+          dH_i(:,j + numel(x_i) + numel(u_i) + numel(x_ip1)) = dHu_ip1_j/delta;
+      end
+    end
+end
+
+
+function h_i = evaluate_dynamics_constraint(x_i, u_i, x_ip1, u_ip1, dt)
+%EVALUATE_DYNAMICS_CONSTRAINT(x_i, u_i, x_ip1, u_ip1, dt) computes the
+%   vector contstraint h_i(x_i, u_i, x_ip1, u_ip1) = 0 from Problem 2(c)
+%
+%   @param x_i: the state at the start of the interval; nx by 1 vector
+%   @param u_i: the input at the start of the interval; nu by 1 vector
+%   @param x_ip1: the state at the end of the interval; nx by 1 vector
+%   @param u_ip1: the input at the end of the interval; nu by 1 vector
+%   @param dt: \Delta t, the duration of the interval; scalar
+%
+%   @output h_i: quantity derived in Problem 2(c); nx by 1 vector
+nx = numel(x_i);
+
+h_i = zeros(nx,1);
+
+% TODO: Calculate constraint value
+
+%Impliment equtions solved in 3b and 3c
+Si = 0.5*(x_i+x_ip1)-dt/8*(f(x_ip1,u_ip1)-f(x_i,u_i));
+Sdi = 3/(2*dt)*(x_ip1-x_i)-1/4*(f(x_ip1,u_ip1)+f(x_i,u_i));
+ri = 0.5*(u_i+u_ip1);
+
+h_i = Sdi - f(Si,ri);
+
 end
 
 %{
