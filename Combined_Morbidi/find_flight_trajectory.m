@@ -78,9 +78,11 @@ function [z, Aeq, beq, lb, ub, z0] = find_flight_trajectory(x_0, x_f, N, dt)
         [x_i_inds,~] = sample_indices(i, nx, nu);
         
         z0(x_i_inds) = Xdisc(:,i);
+%         z0(x_i_inds) = x_0; % - attempt to get better dynamics,
     end
 
-    options = optimoptions('fmincon','SpecifyObjectiveGradient',true,'SpecifyConstraintGradient',true,'Display','iter');
+%     options = optimoptions('fmincon','SpecifyObjectiveGradient',true,'SpecifyConstraintGradient',true,'Display','iter');
+    options = optimoptions('fmincon','SpecifyObjectiveGradient',true,'SpecifyConstraintGradient',true,'Display','iter','MaxIterations',50);
     problem.objective = @(z) trajectory_cost(z, N, nx, nu, dt);
 
 
