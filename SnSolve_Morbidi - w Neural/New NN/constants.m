@@ -7,13 +7,14 @@
 function [constants] = constants()
 
 %Choice Variables
+% constants.costtype = 'Simple';
 % constants.costtype = 'Trapezoid';
 % constants.costtype = 'Rectangle';
 constants.costtype = 'NeuralNet';
-constants.solvemode = 'fmincon';
-% constants.solvemode = 'snsolve';
+% constants.solvemode = 'fmincon';
+constants.solvemode = 'snsolve';
 
-constants.Final_Position = [-4,-5,6]; %m
+constants.Final_Position = [4,5,6]; %m
 constants.yaw = pi/4;
 
 constants.maxI = 200; %Max number of iterations

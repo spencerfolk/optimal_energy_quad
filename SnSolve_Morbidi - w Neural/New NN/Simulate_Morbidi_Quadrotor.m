@@ -53,7 +53,7 @@ xlabel('x');
 ylabel('y');
 zlabel('z');
 legend("Optimal Trajectory","Linear Interpolation")
-axis([-5 5 -4 4 0 12]);
+% axis([-5 5 -4 4 0 12]);
 
 
 figure()

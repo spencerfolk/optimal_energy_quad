@@ -27,7 +27,24 @@ function [g,dG] = trajectory_cost(z)
             [g,dG] = TrapCost(z,consts);
         elseif costtype == 'Rectangle'
             [g,dG] = RectCost(z,consts);
+        elseif costtype == 'Simple'
+            [g,dG] = SimpleCost(z,consts);
         end
+
+end
+
+function [g,dG] = SimpleCost(z,consts)
+
+    N = consts.N;
+    nx = consts.nx;
+    nu = consts.nu;
+    dt = consts.dt;
+    g = 0;
+    dG = zeros(N*(nx + nu),1);
+    for i=1:N
+        g_i = sum(ui.^2);
+        g = g+g_i;
+    end
 
 end
 
@@ -132,41 +149,67 @@ function [g,dG] = NeuralCost(z,consts)
         Theta2 = load("optimized_Theta2.txt");
         Theta3 = load("optimized_Theta3.txt");
         Theta4 = load("optimized_Theta4.txt");
+    
+    %create an Nx8 matrix of 'states' used by Neural Network
+    X = zeros(N,8);
+
+    for i = 1:N
+
+        [x_i_inds, ~] = sample_indices(i);
+
+        xi = z(x_i_inds);
+
+        X0 = zeros(1,8);
+
+        X0(1) = norm([xi(2), xi(4)]);
+        X0(2) = norm([xi(2), xi(4)])^2;
+        X0(3) = xi(6);
+        xdot2 = (consts.k_b/consts.m)*(sin(xi(7))*sin(xi(11)) + cos(xi(7))*cos(xi(11))*sin(xi(9)))*sum([xi(13) , xi(14), xi(15), xi(16)].^2);
+        xdot4 = (consts.k_b/consts.m)*(cos(xi(7))*sin(xi(9))*sin(xi(11)) - cos(xi(11))*sin(xi(7)))*sum([xi(13) , xi(14), xi(15), xi(16)].^2);
+        X0(4) = sqrt(norm([xdot2, xdot4]));
+        xdot6 = (consts.k_b/consts.m)*(cos(xi(9))*cos(xi(7)))*sum([xi(13) , xi(14), xi(15), xi(16)].^2) - consts.g;
+        X0(5) = xdot6; 
+        X0(6) = xi(10);
+        X0(7) = xi(8);
+        X0(8) = xi(12);
+
+        X(i,:) = X0;
+    end
+        
+        
+    [X_norm, mu, sigma] = featureNormalize(X)
         
     for i=1:N
         
-        [x_i_inds, u_i_inds] = sample_indices(i);
+        Xi = X_norm(i,:);
         
-        xi = z(x_i_inds);
-        ui = z(u_i_inds);
-        
-        NeuralFun = @(z) nnPredict(Theta1,Theta2,Theta3,Theta4,z);
+        NeuralFun = @(Xi) nnPredict(Theta1,Theta2,Theta3,Theta4,Xi);
 
-        g_i = NeuralFun(xi);
+        g_i = NeuralFun(Xi)*dt;
         g = g + g_i;                
 
               % use numerical derivatives to compute dG
               % dG = [dh/dx0 dh/du0 dh/dx1 dh/du1]
               % where the partial derivatives are written (dh/dx0)_ij = dh_i/dx0_j
               delta = 1e-8;
-              dG = zeros(numel(xi), 2*(numel(xi)+numel(ui)));
+              dG = zeros(N*(nx + nu),1);
               for j=1:numel(xi)
                   dx = zeros(numel(xi),1);
                   dx(j) = delta;
-                  dGx_i_j = NeuralFun(xi + dx, ui, xip1, uip1, dt) - h_i;
-                  dGx_ip1_j = NeuralFun(xi, ui, xip1 + dx, uip1, dt) - h_i;
-                  dG(:,j) = dGx_i_j/delta;
-                  dG(:,j + numel(xi) + numel(ui)) = dGx_ip1_j/delta;
+                  dGx_i_j = NeuralFun(xi + dx) - g_i;
+%                   dGx_ip1_j = NeuralFun(xi, ui, xip1 + dx, uip1, dt) - g_i;
+                  dG(x_i_inds(j)) = dGx_i_j/delta;
+%                   dG(:,j + numel(xi) + numel(ui)) = dGx_ip1_j/delta;
               end
 
-              for j=1:numel(ui)
-                  du = zeros(numel(ui),1);
-                  du(j) = delta;
-                  dGu_i_j = NeuralFun(xi, ui + du, xip1, uip1, dt) - h_i;
-                  dGu_ip1_j = NeuralFun(xi, ui, xip1, uip1 + du, dt) - h_i;
-                  dG(:,j + numel(xi)) = dGu_i_j/delta;
-                  dG(:,j + numel(xi) + numel(ui) + numel(xip1)) = dGu_ip1_j/delta;
-              end
+%               for j=1:numel(ui)
+%                   du = zeros(numel(ui),1);
+%                   du(j) = delta;
+%                   dGu_i_j = NeuralFun(xi, ui + du, xip1, uip1, dt) - h_i;
+%                   dGu_ip1_j = NeuralFun(xi, ui, xip1, uip1 + du, dt) - h_i;
+%                   dG(:,j + numel(xi)) = dGu_i_j/delta;
+%                   dG(:,j + numel(xi) + numel(ui) + numel(xip1)) = dGu_ip1_j/delta;
+%               end
     end
 end
 
