@@ -9,21 +9,18 @@ close all
 % Load in theta values
 load("../weights/optimized_Theta1.txt")
 load("../weights/optimized_Theta2.txt")
-load("../weights/optimized_Theta3.txt")
-load("../weights/optimized_Theta4.txt")
 
 % Generate prediction data set
 simSpeed = (0:0.01:20)';
-simX = zeros(length(simSpeed), 8);
+simX = zeros(length(simSpeed), 16);
 
 simX(:,1) = simSpeed;
-simX(:,2) = simSpeed.^2;
 
 [simX, sim_mu, sim_sigma] = featureNormalize(simX);
 
 % Now run prediction 
 
-sim_power = nnPredict(optimized_Theta1, optimized_Theta2, optimized_Theta3, optimized_Theta4, simX);
+sim_power = nnPredict(optimized_Theta1, optimized_Theta2, simX);
 
 % Undo normalization of parameters
 
