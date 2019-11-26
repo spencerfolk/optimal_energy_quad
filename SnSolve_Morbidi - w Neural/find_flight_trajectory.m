@@ -16,7 +16,7 @@
 %     exported from OPTIMTOOL.
 
 
-function [z, Aeq, beq, lb, ub, z0] = find_flight_trajectory(x_0, x_f, N, dt)
+function [z, Aeq, beq, lb, ub, z0] = find_flight_trajectory(x_0, x_f)
 %FIND_SWINGUP_TRAJECTORY(x_0, x_f, N, dt) executes a direct collocation
 %optimization program to find an input sequence to drive the cartpole
 %system from x_0 to x_f.
@@ -30,8 +30,13 @@ function [z, Aeq, beq, lb, ub, z0] = find_flight_trajectory(x_0, x_f, N, dt)
 %   @output lb: lower bound of constraint lb <= z <= ub; n_z by 1 vector
 %   @output ub: upper bound of constraint lb <= z <= ub; n_z by 1 vector
 %   @output z0: initial guess for z; n_z by 1 vector
-    nx = 16;
-    nu = 4;
+    consts = constants();
+    N = consts.N;
+    nx = consts.nx;
+    nu = consts.nu;
+    dt = consts.dt;
+    
+    solvemode = consts.solvemode;
 
     % TODO: Add constraints to Aeq, beq to enforce starting at x_0 and
     % ending at x_f
@@ -39,8 +44,8 @@ function [z, Aeq, beq, lb, ub, z0] = find_flight_trajectory(x_0, x_f, N, dt)
     beq = zeros(2*nx, 1);
     
     %Fill in Aeq in area of x1 and xN
-    [x_1_inds,~] = sample_indices(1, nx, nu);
-    [x_N_inds,~] = sample_indices(N, nx, nu);
+    [x_1_inds,~] = sample_indices(1);
+    [x_N_inds,~] = sample_indices(N);
     Aeq(1:nx,x_1_inds) = eye(nx);
     Aeq(nx+1:2*nx,x_N_inds) = eye(nx);
     
@@ -56,9 +61,12 @@ function [z, Aeq, beq, lb, ub, z0] = find_flight_trajectory(x_0, x_f, N, dt)
     for i=1:N
         
         % Add bounding box constraints for u_i
-        [x_i_inds,~] = sample_indices(i, nx, nu);      
+        [x_i_inds,u_i_inds] = sample_indices(i);      
         lb(x_i_inds(13:16)) = 0;
         ub(x_i_inds(13:16)) = w_max;
+%         lb(x_i_inds(5)) = -1e-3;
+%         ub(u_i_inds) = 2000; %Note: Arbitrary
+%         lb(u_i_inds) = -2000;
     end
 
     % TODO: make initial guess for z
@@ -73,23 +81,28 @@ function [z, Aeq, beq, lb, ub, z0] = find_flight_trajectory(x_0, x_f, N, dt)
         Xdisc(j,:) = ppval(x_spline,t_in);
     end
 
+    Acceleration_Input = 10;
+    
     for i=1:N
         % TODO: make initial guess for ith sample
-        [x_i_inds,~] = sample_indices(i, nx, nu);
+        [x_i_inds,u_i_inds] = sample_indices(i);
         
         z0(x_i_inds) = Xdisc(:,i);
-%         z0(x_i_inds) = x_0; % - attempt to get better dynamics,
+%         z0(u_i_inds) = Acceleration_Input;
+        
     end
 
+    if solvemode == 'fmincon'
+        
 %     options = optimoptions('fmincon','SpecifyObjectiveGradient',true,'SpecifyConstraintGradient',true,'Display','iter');
-    maxI = 100; %Max iterations
+    maxI = consts.maxI; %Max iterations
     options = optimoptions('fmincon','SpecifyObjectiveGradient',true,'SpecifyConstraintGradient',true,'Display','iter','MaxIterations',maxI);
-    problem.objective = @(z) trajectory_cost(z, N, nx, nu, dt);
+    
 
-
+    problem.objective = @(z) trajectory_cost(z);
     problem.x0 = z0;
     problem.options = options;
-    problem.nonlcon = @(z) all_constraints(z, N, nx, nu, dt);
+    problem.nonlcon = @(z) all_constraints(z);
     problem.solver = 'fmincon';
     problem.Aeq = Aeq;
     problem.beq = beq;
@@ -97,15 +110,41 @@ function [z, Aeq, beq, lb, ub, z0] = find_flight_trajectory(x_0, x_f, N, dt)
     problem.ub = ub;
 
     z = fmincon(problem);
+    
+    end
+    
+    if solvemode == 'snsolve'
+    
+    snscreen on;
+    z = snsolve(@sntrajectory_cost, z0, [], [], Aeq, beq, lb, ub, @snconstraints);
+
+    end
+    
 end
 
-function [c, ceq, dC, dCeq] = all_constraints(z, N, nx, nu, dt)
+function [c, ceq, dC, dCeq] = all_constraints(z)
 
-    [ceq, dCeq] = dynamics_constraints(z, N, nx, nu, dt);
+    consts = constants();
+    N = consts.N;
+    nx = consts.nx;
+    nu = consts.nu;
+    dt = consts.dt;
+    [ceq, dCeq] = dynamics_constraints(z);
 
     c = zeros(0,1);
     dC = zeros(0,numel(z));
 
     dC = sparse(dC)';
     dCeq = sparse(dCeq)';
+end
+
+function [c, ceq, dC, dCeq] = snconstraints(z)
+    [c, ceq, dC, dCeq] = all_constraints(z);
+    dC = dC';
+    dCeq = dCeq';
+end
+
+function [g,dG] = sntrajectory_cost(z)
+    [g,dG] = trajectory_cost(z);
+    dG = dG';
 end
