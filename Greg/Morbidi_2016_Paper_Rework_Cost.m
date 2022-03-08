@@ -122,7 +122,9 @@ function [Er1] = Energy1(xki,constants)
     %Takes in structure constants containing c1-c9
     %Gives back scalar Er1, corresponding to the portion of energy Er
     %corresponding to the current state
-    Er1 = (constants.c1+constants.c2*xki+constants.c3*xki^2+constants.c4*xki^3+constants.c5*xki^4);
+%     Er1 = (constants.c1+constants.c2*xki+constants.c3*xki^2+constants.c4*xki^3+constants.c5*xki^4);
+    %Greg Bullshitting 3/8/22 - to be deleted:
+    Er1 = (constants.c2+constants.c1*xki+constants.c3*xki^2+constants.c4*xki^3+constants.c5*xki^4);
 end
 
 function [dEr1_dxk] = dEnergy1 (xki,constants)
